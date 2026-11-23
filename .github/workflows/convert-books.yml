@@ -1,0 +1,63 @@
+name: Convert Books to AZW3
+
+on:
+  push:
+    paths:
+      - '**/*.pdf'
+      - '**/*.epub'
+      - '!**/*.azw3'
+
+permissions:
+  contents: write
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Calibre & system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y calibre
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          pip install pymupdf ebooklib
+
+      - name: Convert PDF/EPUB to AZW3 and cleanup
+        run: |
+          shopt -s nullglob globstar
+          converted=0
+          # Xử lý các file epub trước (hoặc pdf)
+          for f in **/*.pdf **/*.epub; do
+            # Bỏ qua nếu là file tạm thời
+            if [[ "$f" == *.pdf ]] || [[ "$f" == *.epub ]]; then
+              echo ">>> Đang chuyển đổi: $f"
+              python pdf2epub.py "$f" --only-azw3
+              converted=1
+            fi
+          done
+          echo "CONVERTED=$converted" >> $GITHUB_ENV
+
+      - name: Commit and push AZW3 files
+        if: env.CONVERTED == '1'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Auto-convert books to AZW3 [skip ci]"
+            git push
+          else
+            echo "Không có thay đổi mới."
+          fi

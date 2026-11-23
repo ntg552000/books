@@ -28,7 +28,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install Python dependencies
         run: |
@@ -36,18 +35,27 @@ jobs:
 
       - name: Convert PDF/EPUB to AZW3 and cleanup
         run: |
-          shopt -s nullglob globstar
-          converted=0
-          # Xử lý các file epub trước (hoặc pdf)
-          for f in **/*.pdf **/*.epub; do
-            # Bỏ qua nếu là file tạm thời
-            if [[ "$f" == *.pdf ]] || [[ "$f" == *.epub ]]; then
-              echo ">>> Đang chuyển đổi: $f"
-              python pdf2epub.py "$f" --only-azw3
-              converted=1
-            fi
-          done
-          echo "CONVERTED=$converted" >> $GITHUB_ENV
+          python -c "
+          import os, subprocess, sys
+          from pathlib import Path
+
+          targets = []
+          for ext in ('*.pdf', '*.epub'):
+              for p in Path('.').rglob(ext):
+                  if not any(part.startswith('.') for part in p.parts):
+                      targets.append(p)
+
+          print(f'Tìm thấy {len(targets)} file cần xử lý.')
+          for t in targets:
+              print(f'>>> Đang chuyển đổi: {t}')
+              res = subprocess.run([sys.executable, 'pdf2epub.py', str(t), '--only-azw3'])
+              if res.returncode != 0:
+                  print(f'Lỗi khi chuyển đổi {t}', file=sys.stderr)
+
+          if targets:
+              with open(os.environ['GITHUB_ENV'], 'a') as f:
+                  f.write('CONVERTED=1\n')
+          "
 
       - name: Commit and push AZW3 files
         if: env.CONVERTED == '1'

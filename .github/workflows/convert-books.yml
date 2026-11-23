@@ -13,11 +13,13 @@ permissions:
 jobs:
   convert:
     runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Check if PDF or EPUB was added/modified
         id: check_trigger
@@ -88,7 +90,9 @@ jobs:
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "Auto-convert books to AZW3 [skip ci]"
-            git push
+            # Kéo commit mới nhất về trước khi push để không bao giờ bị conflict
+            git pull --rebase origin ${{ github.ref_name }}
+            git push origin ${{ github.ref_name }}
           else
             echo "Không có thay đổi mới."
           fi

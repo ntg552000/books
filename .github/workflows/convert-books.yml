@@ -17,23 +17,46 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
+
+      - name: Check if PDF or EPUB was added/modified
+        id: check_trigger
+        run: |
+          # Kiểm tra xem có file .pdf hoặc .epub nào thực sự được thêm mới (A) hoặc cập nhật (M) không
+          CHANGED=$(git diff --name-only --diff-filter=AM HEAD~1 HEAD 2>/dev/null | grep -iE '\.(pdf|epub)$' || true)
+          # Nếu đây là commit đầu tiên thì tìm file trên đĩa
+          if [ -z "$CHANGED" ] && [ "$(git rev-list --count HEAD)" -eq 1 ]; then
+            CHANGED=$(find . -type f \( -name "*.pdf" -o -name "*.epub" \) ! -path "*/.*" || true)
+          fi
+
+          if [ -z "$CHANGED" ]; then
+            echo ">>> Commit này chỉ là XÓA file hoặc không có sách mới được thêm. Dừng workflow."
+            echo "SHOULD_RUN=false" >> $GITHUB_ENV
+          else
+            echo ">>> Phát hiện sách mới/sửa đổi:"
+            echo "$CHANGED"
+            echo "SHOULD_RUN=true" >> $GITHUB_ENV
+          fi
 
       - name: Install Calibre & system tools
+        if: env.SHOULD_RUN == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y calibre
 
       - name: Set up Python
+        if: env.SHOULD_RUN == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Python dependencies
+        if: env.SHOULD_RUN == 'true'
         run: |
           pip install pymupdf ebooklib
 
       - name: Convert PDF/EPUB to AZW3 and cleanup
+        if: env.SHOULD_RUN == 'true'
         run: |
           python -c "
           import os, subprocess, sys

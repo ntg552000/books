@@ -6,6 +6,7 @@ on:
       - '**/*.pdf'
       - '**/*.epub'
       - '!**/*.azw3'
+  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên web nếu muốn
 
 permissions:
   contents: write
@@ -21,22 +22,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check if PDF or EPUB was added/modified
+      - name: Check for unconverted PDF or EPUB files
         id: check_trigger
         run: |
-          # Kiểm tra xem có file .pdf hoặc .epub nào thực sự được thêm mới (A) hoặc cập nhật (M) không
-          CHANGED=$(git diff --name-only --diff-filter=AM HEAD~1 HEAD 2>/dev/null | grep -iE '\.(pdf|epub)$' || true)
-          # Nếu đây là commit đầu tiên thì tìm file trên đĩa
-          if [ -z "$CHANGED" ] && [ "$(git rev-list --count HEAD)" -eq 1 ]; then
-            CHANGED=$(find . -type f \( -name "*.pdf" -o -name "*.epub" \) ! -path "*/.*" || true)
-          fi
-
-          if [ -z "$CHANGED" ]; then
-            echo ">>> Commit này chỉ là XÓA file hoặc không có sách mới được thêm. Dừng workflow."
+          # Quét xem trong repo có file .pdf hoặc .epub nào chưa được chuyển đổi không
+          FILES=$(find . -type f \( -iname "*.pdf" -o -iname "*.epub" \) ! -path "*/.*")
+          if [ -z "$FILES" ]; then
+            echo ">>> Không có file PDF hoặc EPUB nào trong repo cần xử lý. Dừng workflow."
             echo "SHOULD_RUN=false" >> $GITHUB_ENV
           else
-            echo ">>> Phát hiện sách mới/sửa đổi:"
-            echo "$CHANGED"
+            echo ">>> Tìm thấy file cần chuyển đổi sang AZW3:"
+            echo "$FILES"
             echo "SHOULD_RUN=true" >> $GITHUB_ENV
           fi
 
@@ -65,10 +61,11 @@ jobs:
           from pathlib import Path
 
           targets = []
-          for ext in ('*.pdf', '*.epub'):
+          for ext in ('*.pdf', '*.PDF', '*.epub', '*.EPUB'):
               for p in Path('.').rglob(ext):
                   if not any(part.startswith('.') for part in p.parts):
-                      targets.append(p)
+                      if p not in targets:
+                          targets.append(p)
 
           print(f'Tìm thấy {len(targets)} file cần xử lý.')
           for t in targets:
@@ -90,7 +87,7 @@ jobs:
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "Auto-convert books to AZW3 [skip ci]"
-            # Kéo commit mới nhất về trước khi push để không bao giờ bị conflict
+            # Kéo commit mới nhất về trước khi push để tránh conflict
             git pull --rebase origin ${{ github.ref_name }}
             git push origin ${{ github.ref_name }}
           else
